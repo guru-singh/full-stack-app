@@ -1,7 +1,12 @@
 let express = require('express');
 let mongodb = require('mongodb');
+let sanitizeHTML = require('sanitize-html');
 let ourApp = express();
 let db;
+let port = process.env.PORT;
+if(!port) {
+    port = 3000;
+}
 ourApp.use(express.static('public'))
 
 let connectionString = "mongodb+srv://todoListAppUser:wpUsAJPpcMK9fv4I@guru-full-stack-2kbcv.mongodb.net" +
@@ -12,14 +17,24 @@ mongodb.connect(connectionString, {
     useUnifiedTopology: true
 }, (err, client) => {
     db = client.db();
-    ourApp.listen(3000);
+    ourApp.listen(port);
 })
 //wpUsAJPpcMK9fv4I
 //todoListAppUser
 ourApp.use(express.json());
 ourApp.use(express.urlencoded({extended: false}));
 
-ourApp.get('/', (req, response) => {
+function passwordProtected(req, res, next) {
+    res.set('WWW-Authenticate', 'Basic realm="simple todo app"')
+    if(req.headers.authorization == 'Basic YWRtaW46YWRtaW4=') {
+        next();
+    } else {
+        res.status(401).send('invalid login');
+    }
+}
+ourApp.use(passwordProtected);
+
+ourApp.get('/',   (req, response) => {
     db
         .collection('items')
         .find()
@@ -37,26 +52,20 @@ ourApp.get('/', (req, response) => {
             <h1 class="display-4 text-center py-1">To-Do App!!!</h1>
             
             <div class="jumbotron p-3 shadow-sm">
-            <form method="POST" action="/create-item">
+            <form id="frmToDoList" method="POST" action="/create-item">
                 <div class="d-flex align-items-center">
-                <input name="txtToDoItem" autofocus autocomplete="off" class="form-control mr-3" type="text" style="flex: 1;">
-                <button class="btn btn-primary">Add New Item</button>
+                <input id="txtToDoItem" name="txtToDoItem" autofocus autocomplete="off" class="form-control mr-3" type="text" style="flex: 1;">
+                <button id="btnAddNew" class="btn btn-primary">Add New Item</button>
                 </div>
             </form>
             </div>
-            <ul class="list-group pb-5">
-            ${items.map((item) => {
-                return `<li class="list-group-item list-group-item-action d-flex align-items-center justify-content-between">
-                <span class="item-text">${item.text}</span>
-                <div>
-                <button data-id="${item._id}" class="edit-me btn btn-secondary btn-sm mr-1">Edit</button>
-                <button data-id="${item._id}" class="delete-me btn btn-danger btn-sm">Delete</button>
-                </div>
-            </li>`;}).join('')}
-            
+            <ul id="ulItemList" class="list-group pb-5">
             </ul>
             
         </div>
+        <script>
+                let items = ${JSON.stringify(items)};
+        </script>
         <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
         <script src="browser.js"></script>
         </body>
@@ -65,15 +74,17 @@ ourApp.get('/', (req, response) => {
 });
 
 ourApp.post('/create-item', (req, res) => {
+    let safeText = sanitizeHTML(req.body.txtToDoItem, {allowedTags:[], allowedAttributes: {}, });
     db.collection('items')
-        .insertOne({text: req.body.txtToDoItem, createdOn: new Date()}, () => {
-            res.redirect('/');
+        .insertOne({text: safeText, createdOn: new Date()}, (err, info) => {
+            console.log(info.ops[0]);
+            res.json(info.ops[0]);
         });
 });
 
 ourApp.post('/update-item', (req, res) => {
-    console.log(req.body);
-    db.collection('items').findOneAndUpdate({_id: new mongodb.ObjectID(req.body.id)}, {$set: {text: req.body.text, updatedOn: new Date()}}, ()=> {
+    let safeText = sanitizeHTML(req.body.txtToDoItem, {allowedTags:[], allowedAttributes: {}, });
+    db.collection('items').findOneAndUpdate({_id: new mongodb.ObjectID(req.body.id)}, {$set: {text: safeText, updatedOn: new Date()}}, ()=> {
         res.send('success');
     });
 });
